@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id              String         @id @default(cuid())
+  name            String
+  email           String         @unique
+  password        String
+  role            Role           @default(CLIENT)
+  createdAt       DateTime       @default(now())
+  assignedTasks   Task[]         @relation("AssignedEmployee")
+  clientTasks     Task[]         @relation("AssignedClient")
+  clientProfile   ClientProfile?
+  roadmap         Roadmap?       @relation("ClientRoadmap")
+  roadmapTasks    RoadmapTask[]  @relation("RoadmapTaskEmployee")
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  status       TaskStatus @default(PENDING)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  assignedTo   User?      @relation("AssignedEmployee", fields: [userId], references: [id])
+  userId       String?
+  client       User?      @relation("AssignedClient", fields: [clientId], references: [id])
+  clientId     String?
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  service   String?
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+  CLIENT
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model ClientProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  businessName String?
+  phone        String?
+  website      String?
+  facebook     String?
+  instagram    String?
+  twitter      String?
+  notes        String?
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+}
+
+model Roadmap {
+  id        String          @id @default(cuid())
+  title     String
+  clientId  String          @unique
+  client    User            @relation("ClientRoadmap", fields: [clientId], references: [id])
+  months    RoadmapMonth[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model RoadmapMonth {
+  id          String           @id @default(cuid())
+  roadmapId   String
+  roadmap     Roadmap          @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  monthNumber Int
+  title       String
+  modules     RoadmapModule[]
+  createdAt   DateTime         @default(now())
+}
+
+model RoadmapModule {
+  id          String         @id @default(cuid())
+  monthId     String
+  month       RoadmapMonth   @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  order       Int            @default(0)
+  tasks       RoadmapTask[]
+  createdAt   DateTime       @default(now())
+}
+
+model RoadmapTask {
+  id          String           @id @default(cuid())
+  moduleId    String
+  module      RoadmapModule    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      RoadmapStatus    @default(PENDING)
+  priority    Priority         @default(MEDIUM)
+  assignedTo  User?            @relation("RoadmapTaskEmployee", fields: [employeeId], references: [id])
+  employeeId  String?
+  dueDay      Int?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+enum RoadmapStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
