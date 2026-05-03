@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fixyads Project Management Platform
 
-## Getting Started
+A robust, role-based project management portal and admin panel built with Next.js, Prisma, and PostgreSQL.
 
-First, run the development server:
+## 🌟 Features
 
+- **Role-Based Access Control (RBAC):** Distinct dashboards and permissions for **Admins**, **Clients**, and **Employees**.
+- **Secure Authentication:** Powered by NextAuth.js with encrypted credentials (bcrypt).
+- **Project & Task Management:** Create roadmaps, track tasks, and manage project lifecycles.
+- **Modern Tech Stack:** Built with Next.js 14+ (App Router), React, and TypeScript.
+- **Database Architecture:** PostgreSQL database managed safely with Prisma ORM.
+- **Responsive UI:** Styled seamlessly with Tailwind CSS for mobile and desktop support.
+
+## 🚀 Tech Stack
+
+- **Framework:** [Next.js](https://nextjs.org/) (App Router)
+- **Authentication:** [NextAuth.js](https://next-auth.js.org/)
+- **Database:** PostgreSQL (via [Supabase](https://supabase.com/) / [Neon](https://neon.tech/))
+- **ORM:** [Prisma](https://www.prisma.io/)
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+
+## 🛠️ Local Development Setup
+
+### 1. Clone the repository
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/KALIL-devs/project_management_platform.git
+cd project_management_platform
 ```
 
+### 2. Install Dependencies
+```bash
+npm install
+```
+
+### 3. Environment Variables
+Create a `.env` file in the root directory and configure your database and authentication secrets:
+```env
+# Database connection URLs
+DATABASE_URL="postgresql://user:password@host:port/db?pgbouncer=true"
+DIRECT_URL="postgresql://user:password@host:port/db"
+
+# NextAuth Configuration
+NEXTAUTH_SECRET="your-super-secret-key"
+NEXTAUTH_URL="http://localhost:3000"
+```
+
+### 4. Database Setup
+Push the Prisma schema to your PostgreSQL database to create the necessary tables:
+```bash
+npx prisma db push
+```
+
+Generate the default Admin user by running the seed script:
+```bash
+npm run seed
+```
+
+### 5. Run the Application
+Start the development server:
+```bash
+npm run dev
+```
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🔐 Demo Credentials
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+When logging in locally or on the demo deployment, you can use the following default roles to explore the application:
 
-## Learn More
+**Admin Account**
+- Email: `admin@portal.com`
+- Password: `admin123`
 
-To learn more about Next.js, take a look at the following resources:
+**Client Account**
+- Email: `client@portal.com`
+- Password: `client123`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Employee Account**
+- Email: `emp@portal.com`
+- Password: `emp123`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📦 Deployment
 
-## Deploy on Vercel
+This project is optimized for deployment on platforms like Vercel. 
+Ensure that all `.env` variables (especially `NEXTAUTH_URL` and `NEXTAUTH_SECRET`) are correctly added to your deployment platform's dashboard before building.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Connect your repository to Vercel/Netlify.
+2. Add your Environment Variables.
+3. Deploy! (Prisma generate runs automatically during the `postinstall` script).
