@@ -4,6 +4,7 @@ type InputProps = {
   placeholder?: string;
   value?: string;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  required?: boolean;
 };
 
 export default function Input({
@@ -12,6 +13,7 @@ export default function Input({
   placeholder,
   value,
   onChange,
+  required = false,
 }: InputProps) {
   return (
     <div className="flex flex-col gap-1">
@@ -21,6 +23,7 @@ export default function Input({
         placeholder={placeholder}
         value={value}
         onChange={onChange}
+        required={required}
         className="border border-gray-300 rounded-lg px-4 text-black py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
     </div>

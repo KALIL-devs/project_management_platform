@@ -20,6 +20,7 @@ model User {
   clientProfile   ClientProfile?
   roadmap         Roadmap?       @relation("ClientRoadmap")
   roadmapTasks    RoadmapTask[]  @relation("RoadmapTaskEmployee")
+  attendances     Attendance[]
 }
 
 model Task {
@@ -132,3 +133,23 @@ enum Priority {
   HIGH
   URGENT
 }
+
+model Attendance {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date         DateTime         @default(now())
+  punchIn      DateTime         @default(now())
+  punchOut     DateTime?
+  totalMinutes Int?
+  status       AttendanceStatus @default(PUNCHED_IN)
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+enum AttendanceStatus {
+  PUNCHED_IN
+  PUNCHED_OUT
+  ABSENT
+}

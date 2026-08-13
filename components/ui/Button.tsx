@@ -4,6 +4,7 @@ type ButtonProps = {
   type?: "button" | "submit" | "reset";
   variant?: "primary" | "secondary" | "danger";
   fullWidth?: boolean;
+  disabled?: boolean;
 };
 
 export default function Button({
@@ -12,8 +13,9 @@ export default function Button({
   type = "button",
   variant = "primary",
   fullWidth = false,
+  disabled = false,
 }: ButtonProps) {
-  const base = "font-semibold py-2 px-4 rounded-lg transition-colors text-sm";
+  const base = "font-semibold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants = {
     primary: "bg-blue-600 hover:bg-blue-700 text-white",
@@ -25,6 +27,7 @@ export default function Button({
     <button
       type={type}
       onClick={onClick}
+      disabled={disabled}
       className={`${base} ${variants[variant]} ${fullWidth ? "w-full" : ""}`}
     >
       {children}

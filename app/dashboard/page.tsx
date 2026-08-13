@@ -69,7 +69,23 @@ export default function EmployeeDashboard() {
   const pathname = usePathname();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [roadmapTasks, setRoadmapTasks] = useState<RoadmapTask[]>([]);
+  const [activePunch, setActivePunch] = useState<any>(null);
+  const [punchNotes, setPunchNotes] = useState("");
+  const [punchLoading, setPunchLoading] = useState(false);
+  const [punchMsg, setPunchMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [loading, setLoading] = useState(true);
+
+  async function fetchMyAttendance() {
+    try {
+      const res = await fetch("/api/attendance/my");
+      if (res.ok) {
+        const data = await res.json();
+        setActivePunch(data.activePunch || null);
+      }
+    } catch (err) {
+      console.error("Failed to fetch attendance:", err);
+    }
+  }
 
   useEffect(() => {
     async function fetchAll() {
@@ -83,6 +99,9 @@ export default function EmployeeDashboard() {
         const roadmapRes = await fetch("/api/roadmap/my-tasks");
         const roadmapData = await roadmapRes.json();
         setRoadmapTasks(Array.isArray(roadmapData) ? roadmapData : []);
+
+        // Fetch punch status
+        await fetchMyAttendance();
       } catch {
         setTasks([]);
         setRoadmapTasks([]);
@@ -92,6 +111,44 @@ export default function EmployeeDashboard() {
     }
     fetchAll();
   }, []);
+
+  async function handlePunchAction(action: "PUNCH_IN" | "PUNCH_OUT") {
+    setPunchLoading(true);
+    setPunchMsg(null);
+    const userId = (session?.user as any)?.id;
+
+    if (!userId) {
+      setPunchMsg({ text: "Session error. Please log in again.", type: "error" });
+      setPunchLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          action,
+          notes: punchNotes.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Punch action failed");
+
+      setPunchMsg({
+        text: action === "PUNCH_IN" ? "✅ Punched In Successfully!" : "✅ Punched Out Successfully!",
+        type: "success",
+      });
+      setPunchNotes("");
+      await fetchMyAttendance();
+    } catch (err: any) {
+      setPunchMsg({ text: err.message || "Failed to record punch", type: "error" });
+    } finally {
+      setPunchLoading(false);
+    }
+  }
 
   async function handleTaskStatusChange(id: string, status: string) {
     setTasks((prev) =>
@@ -114,6 +171,8 @@ export default function EmployeeDashboard() {
       body: JSON.stringify({ status }),
     });
   }
+
+  const isPunchedIn = !!activePunch;
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -145,6 +204,16 @@ export default function EmployeeDashboard() {
           >
             <span>🗺️</span> Roadmaps
           </Link>
+          <Link
+            href="/dashboard/attendance"
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              pathname === "/dashboard/attendance"
+                ? "bg-blue-50 text-blue-600"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <span>⏰</span> Attendance
+          </Link>
         </nav>
         <div className="p-4 border-t border-gray-100 sticky bottom-0 bg-white">
           <div className="px-4 py-2 mb-2">
@@ -161,13 +230,78 @@ export default function EmployeeDashboard() {
       </aside>
 
       {/* Main Content */}
-{/* Main Content */}
       <main className="flex-1 p-8 overflow-y-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">My Tasks</h1>
-          <p className="text-gray-500 mt-1">
-            Welcome back, {session?.user?.name}!
-          </p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800">My Dashboard</h1>
+            <p className="text-gray-500 mt-1">
+              Welcome back, {session?.user?.name}!
+            </p>
+          </div>
+
+          <Link
+            href="/dashboard/attendance"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-xs transition-all"
+          >
+            <span>⏰</span> View Full Attendance History →
+          </Link>
+        </div>
+
+        {/* Punch In / Out Hero Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${
+                  isPunchedIn ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-100 text-gray-600 border-gray-200"
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${isPunchedIn ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`}></span>
+                  {isPunchedIn ? "Online" : "Offline"}
+                </span>
+              </div>
+              <h2 className="text-lg font-bold text-gray-900">
+                {isPunchedIn
+                  ? `Active session started at ${new Date(activePunch.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : "Track your working hours for today"}
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              {!isPunchedIn ? (
+                <button
+                  onClick={() => handlePunchAction("PUNCH_IN")}
+                  disabled={punchLoading}
+                  className="w-full md:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <span>🟢</span> {punchLoading ? "Processing..." : "Punch In"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => handlePunchAction("PUNCH_OUT")}
+                  disabled={punchLoading}
+                  className="w-full md:w-auto px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm rounded-xl shadow-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <span>🔴</span> {punchLoading ? "Processing..." : "Punch Out"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center gap-3">
+            <input
+              type="text"
+              placeholder="Session notes (optional)..."
+              value={punchNotes}
+              onChange={(e) => setPunchNotes(e.target.value)}
+              className="flex-1 w-full border border-gray-200 rounded-lg px-3.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+            />
+          </div>
+
+          {punchMsg && (
+            <div className={`mt-3 text-xs font-medium ${punchMsg.type === "success" ? "text-emerald-600" : "text-red-500"}`}>
+              {punchMsg.text}
+            </div>
+          )}
         </div>
 
         {loading ? (

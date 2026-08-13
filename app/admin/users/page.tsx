@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
@@ -25,7 +26,9 @@ export default function UsersPage() {
   async function fetchUsers() {
     const res = await fetch("/api/users");
     const data = await res.json();
-    setUsers(data);
+    if (Array.isArray(data)) {
+      setUsers(data);
+    }
   }
 
   useEffect(() => {
@@ -132,12 +135,13 @@ export default function UsersPage() {
               <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Email</th>
               <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Role</th>
               <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Joined</th>
+              <th className="text-right px-6 py-4 text-sm font-semibold text-gray-600">Action</th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={4} className="text-center py-12 text-gray-400">
+                <td colSpan={5} className="text-center py-12 text-gray-400">
                   No users yet. Add your first user above.
                 </td>
               </tr>
@@ -157,6 +161,25 @@ export default function UsersPage() {
                       month: "short",
                       year: "numeric",
                     })}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    {user.role === "EMPLOYEE" ? (
+                      <Link
+                        href={`/admin/users/employees/${user.id}`}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        View Details →
+                      </Link>
+                    ) : user.role === "CLIENT" ? (
+                      <Link
+                        href={`/admin/roadmaps/${user.id}`}
+                        className="text-xs font-semibold text-gray-600 hover:text-gray-800 hover:underline"
+                      >
+                        View Roadmap →
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                 </tr>
               ))
