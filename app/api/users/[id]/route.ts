@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/authHelpers";
 import bcrypt from "bcryptjs";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { session, errorResponse } = await requireAuth();
+  if (errorResponse || !session) return errorResponse;
+
   try {
     const { id } = await params;
+
+    // Only Admin/Employee or the user themselves can view details
+    if (session.user.role === "CLIENT" && session.user.id !== id) {
+      return NextResponse.json({ error: "Forbidden: Access denied" }, { status: 403 });
+    }
 
     const user = await prisma.user.findUnique({
       where: { id },
@@ -24,8 +33,14 @@ export async function GET(
             title: true,
             description: true,
             status: true,
+            priority: true,
+            dueDate: true,
+            estimatedHours: true,
             createdAt: true,
             updatedAt: true,
+            client: {
+              select: { id: true, name: true, email: true },
+            },
           },
         },
         roadmapTasks: {
@@ -38,6 +53,7 @@ export async function GET(
             priority: true,
             dueDay: true,
             createdAt: true,
+            updatedAt: true,
           },
         },
         attendances: {
@@ -71,15 +87,23 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { session, errorResponse } = await requireAuth();
+  if (errorResponse || !session) return errorResponse;
+
   try {
     const { id } = await params;
     const body = await request.json();
     const { name, email, password, role } = body;
 
+    // Only Admin can change another user's profile/role; non-admins can only update themselves
+    if (session.user.role !== "ADMIN" && session.user.id !== id) {
+      return NextResponse.json({ error: "Forbidden: Cannot edit another user" }, { status: 403 });
+    }
+
     const dataToUpdate: Record<string, any> = {};
     if (name) dataToUpdate.name = name;
     if (email) dataToUpdate.email = email;
-    if (role) dataToUpdate.role = role;
+    if (role && session.user.role === "ADMIN") dataToUpdate.role = role;
     if (password) {
       dataToUpdate.password = await bcrypt.hash(password, 10);
     }
@@ -107,6 +131,13 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { session, errorResponse } = await requireAuth();
+  if (errorResponse || !session) return errorResponse;
+
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden: Only Admin can delete users" }, { status: 403 });
+  }
+
   try {
     const { id } = await params;
     await prisma.user.delete({ where: { id } });

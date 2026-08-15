@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authHelpers";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
+  const { errorResponse } = await requireRole(["ADMIN", "EMPLOYEE"]);
+  if (errorResponse) return errorResponse;
+
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
@@ -17,11 +21,14 @@ export async function GET() {
     return NextResponse.json(users);
   } catch (error) {
     console.error("Users GET error:", error);
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  const { errorResponse } = await requireRole(["ADMIN"]);
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await request.json();
     const { name, email, password, role } = body;
@@ -41,12 +48,15 @@ export async function POST(request: Request) {
       data: { name, email, password: hashedPassword, role },
     });
 
-    return NextResponse.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Users POST error:", error);
     return NextResponse.json({ error: "Failed to create user" }, { status: 500 });

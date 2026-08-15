@@ -1,17 +1,28 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
+import Badge from "@/components/ui/Badge";
+import Modal from "@/components/ui/Modal";
+import EmptyState from "@/components/ui/EmptyState";
+import LoadingState from "@/components/ui/LoadingState";
+import PunchCard from "@/components/attendance/PunchCard";
 
 type Task = {
   id: string;
   title: string;
   description: string | null;
   status: string;
+  priority: string;
+  dueDate?: string | null;
+  estimatedHours?: number | null;
   createdAt: string;
   client: { id: string; name: string } | null;
+  dependsOn?: { id: string; title: string; status: string } | null;
 };
 
 type RoadmapTask = {
@@ -31,49 +42,31 @@ type RoadmapTask = {
   };
 };
 
-const statusColors: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  COMPLETED: "bg-green-100 text-green-700",
-};
-
-const statusLabels: Record<string, string> = {
-  PENDING: "Pending",
-  IN_PROGRESS: "In Progress",
-  COMPLETED: "Completed",
-};
-
-const priorityColors: Record<string, string> = {
-  LOW: "bg-gray-100 text-gray-500",
-  MEDIUM: "bg-yellow-100 text-yellow-600",
-  HIGH: "bg-orange-100 text-orange-600",
-  URGENT: "bg-red-100 text-red-600",
-};
-
-const roadmapStatusColors: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  COMPLETED: "bg-green-100 text-green-700",
-  BLOCKED: "bg-red-100 text-red-700",
-};
-
-const roadmapStatusLabels: Record<string, string> = {
-  PENDING: "Pending",
-  IN_PROGRESS: "In Progress",
-  COMPLETED: "Completed",
-  BLOCKED: "Blocked",
+type ClientUser = {
+  id: string;
+  name: string;
+  email: string;
 };
 
 export default function EmployeeDashboard() {
   const { data: session } = useSession();
-  const pathname = usePathname();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [roadmapTasks, setRoadmapTasks] = useState<RoadmapTask[]>([]);
+  const [clients, setClients] = useState<ClientUser[]>([]);
   const [activePunch, setActivePunch] = useState<any>(null);
-  const [punchNotes, setPunchNotes] = useState("");
-  const [punchLoading, setPunchLoading] = useState(false);
-  const [punchMsg, setPunchMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Self-Task Creation Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState("MEDIUM");
+  const [clientId, setClientId] = useState("");
+  const [dependsOnId, setDependsOnId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [estimatedHours, setEstimatedHours] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   async function fetchMyAttendance() {
     try {
@@ -87,66 +80,77 @@ export default function EmployeeDashboard() {
     }
   }
 
-  useEffect(() => {
-    async function fetchAll() {
-      try {
-        // Fetch regular tasks
-        const taskRes = await fetch("/api/tasks/my");
-        const taskData = await taskRes.json();
-        setTasks(Array.isArray(taskData) ? taskData : []);
+  async function fetchAllData() {
+    try {
+      const [taskRes, roadmapRes, userRes] = await Promise.all([
+        fetch("/api/tasks/my"),
+        fetch("/api/roadmap/my-tasks"),
+        fetch("/api/users"),
+      ]);
 
-        // Fetch roadmap tasks assigned to this employee
-        const roadmapRes = await fetch("/api/roadmap/my-tasks");
-        const roadmapData = await roadmapRes.json();
-        setRoadmapTasks(Array.isArray(roadmapData) ? roadmapData : []);
+      const taskData = await taskRes.json();
+      const roadmapData = await roadmapRes.json();
+      const userData = await userRes.json();
 
-        // Fetch punch status
-        await fetchMyAttendance();
-      } catch {
-        setTasks([]);
-        setRoadmapTasks([]);
-      } finally {
-        setLoading(false);
+      setTasks(Array.isArray(taskData) ? taskData : []);
+      setRoadmapTasks(Array.isArray(roadmapData) ? roadmapData : []);
+
+      if (Array.isArray(userData)) {
+        setClients(userData.filter((u: any) => u.role === "CLIENT"));
       }
+
+      await fetchMyAttendance();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    fetchAll();
+  }
+
+  useEffect(() => {
+    fetchAllData();
   }, []);
 
-  async function handlePunchAction(action: "PUNCH_IN" | "PUNCH_OUT") {
-    setPunchLoading(true);
-    setPunchMsg(null);
-    const userId = (session?.user as any)?.id;
-
-    if (!userId) {
-      setPunchMsg({ text: "Session error. Please log in again.", type: "error" });
-      setPunchLoading(false);
-      return;
-    }
+  async function handleCreateSelfTask(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setFormError("");
 
     try {
-      const res = await fetch("/api/attendance", {
+      const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
-          action,
-          notes: punchNotes.trim() || undefined,
+          title,
+          description,
+          clientId: clientId || null,
+          priority,
+          dependsOnId: dependsOnId || null,
+          dueDate: dueDate || null,
+          estimatedHours: estimatedHours || null,
         }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Punch action failed");
+      if (!res.ok) throw new Error(data.error || "Failed to create task");
 
-      setPunchMsg({
-        text: action === "PUNCH_IN" ? "✅ Punched In Successfully!" : "✅ Punched Out Successfully!",
-        type: "success",
-      });
-      setPunchNotes("");
-      await fetchMyAttendance();
+      setTitle("");
+      setDescription("");
+      setPriority("MEDIUM");
+      setClientId("");
+      setDependsOnId("");
+      setDueDate("");
+      setEstimatedHours("");
+      setShowCreateModal(false);
+
+      // Refresh task list
+      const updatedTasksRes = await fetch("/api/tasks/my");
+      const updatedTasks = await updatedTasksRes.json();
+      setTasks(Array.isArray(updatedTasks) ? updatedTasks : []);
     } catch (err: any) {
-      setPunchMsg({ text: err.message || "Failed to record punch", type: "error" });
+      setFormError(err.message);
     } finally {
-      setPunchLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -172,380 +176,289 @@ export default function EmployeeDashboard() {
     });
   }
 
-  const isPunchedIn = !!activePunch;
+  const activeRegularTasks = tasks.filter((t) => t.status !== "COMPLETED");
+  const activeRoadmapTasks = roadmapTasks.filter((t) => t.status !== "COMPLETED");
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
-
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-100 flex flex-col">
-        <div className="p-6 border-b border-gray-100">
-          <h1 className="text-xl font-bold text-gray-800">FixyAds</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Employee Panel</p>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">My Workspace</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Welcome back, <span className="font-semibold text-slate-800">{session?.user?.name}</span>! Punch in to begin tracking shift work.
+          </p>
         </div>
-        <nav className="flex-1 p-4 flex flex-col gap-1">
-          <Link
-            href="/dashboard"
-            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              pathname === "/dashboard"
-                ? "bg-blue-50 text-blue-600"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <span>✅</span> My Tasks
-          </Link>
-          <Link
-            href="/dashboard/roadmaps"
-            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              pathname === "/dashboard/roadmaps"
-                ? "bg-blue-50 text-blue-600"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <span>🗺️</span> Roadmaps
-          </Link>
+        <div className="flex items-center gap-3">
+          <Button onClick={() => setShowCreateModal(true)}>
+            + Create Task for Myself
+          </Button>
           <Link
             href="/dashboard/attendance"
-            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              pathname === "/dashboard/attendance"
-                ? "bg-blue-50 text-blue-600"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-all"
           >
-            <span>⏰</span> Attendance
-          </Link>
-        </nav>
-        <div className="p-4 border-t border-gray-100 sticky bottom-0 bg-white">
-          <div className="px-4 py-2 mb-2">
-            <p className="text-sm font-medium text-gray-800">{session?.user?.name}</p>
-            <p className="text-xs text-gray-400">{session?.user?.email}</p>
-          </div>
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 transition-colors w-full"
-          >
-            <span>🚪</span> Sign Out
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 p-8 overflow-y-auto">
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800">My Dashboard</h1>
-            <p className="text-gray-500 mt-1">
-              Welcome back, {session?.user?.name}!
-            </p>
-          </div>
-
-          <Link
-            href="/dashboard/attendance"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-xs transition-all"
-          >
-            <span>⏰</span> View Full Attendance History →
+            <span>⏰</span> Punch Logs →
           </Link>
         </div>
+      </div>
 
-        {/* Punch In / Out Hero Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${
-                  isPunchedIn ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-100 text-gray-600 border-gray-200"
-                }`}>
-                  <span className={`w-2 h-2 rounded-full ${isPunchedIn ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`}></span>
-                  {isPunchedIn ? "Online" : "Offline"}
-                </span>
-              </div>
-              <h2 className="text-lg font-bold text-gray-900">
-                {isPunchedIn
-                  ? `Active session started at ${new Date(activePunch.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                  : "Track your working hours for today"}
-              </h2>
-            </div>
+      {/* Self Task Creation Modal */}
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Create Task for Myself"
+        maxWidth="lg"
+      >
+        <form onSubmit={handleCreateSelfTask} className="space-y-4">
+          <Input
+            label="Task Title"
+            placeholder="e.g. Write monthly SEO performance report"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+          />
 
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              {!isPunchedIn ? (
-                <button
-                  onClick={() => handlePunchAction("PUNCH_IN")}
-                  disabled={punchLoading}
-                  className="w-full md:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <span>🟢</span> {punchLoading ? "Processing..." : "Punch In"}
-                </button>
-              ) : (
-                <button
-                  onClick={() => handlePunchAction("PUNCH_OUT")}
-                  disabled={punchLoading}
-                  className="w-full md:w-auto px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm rounded-xl shadow-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <span>🔴</span> {punchLoading ? "Processing..." : "Punch Out"}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center gap-3">
-            <input
-              type="text"
-              placeholder="Session notes (optional)..."
-              value={punchNotes}
-              onChange={(e) => setPunchNotes(e.target.value)}
-              className="flex-1 w-full border border-gray-200 rounded-lg px-3.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-700 tracking-wide">
+              Description / Notes
+            </label>
+            <textarea
+              placeholder="Task details and steps..."
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
             />
           </div>
 
-          {punchMsg && (
-            <div className={`mt-3 text-xs font-medium ${punchMsg.type === "success" ? "text-emerald-600" : "text-red-500"}`}>
-              {punchMsg.text}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-700 tracking-wide">Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              >
+                <option value="LOW">Low Priority</option>
+                <option value="MEDIUM">Medium Priority</option>
+                <option value="HIGH">High Priority</option>
+                <option value="URGENT">Urgent Priority</option>
+              </select>
             </div>
-          )}
-        </div>
 
-        {loading ? (
-          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
-            <p className="text-gray-400">Loading tasks...</p>
+            <Input
+              label="Target Due Date"
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
           </div>
-        ) : (
-          <div className="flex flex-col gap-8">
 
-            {/* Top Row — Active Tasks */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-700 tracking-wide">
+                Link Client Account (Optional)
+              </label>
+              <select
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              >
+                <option value="">No specific client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              {/* Column 1 — Regular Tasks (active only) */}
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Regular Tasks</h2>
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-                    {tasks.filter(t => t.status !== "COMPLETED").length}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-700 tracking-wide">
+                Task Dependency (Prerequisite)
+              </label>
+              <select
+                value={dependsOnId}
+                onChange={(e) => setDependsOnId(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              >
+                <option value="">No prerequisite task</option>
+                {tasks.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    Depends on: {t.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <Input
+            label="Estimated Hours"
+            type="number"
+            step="0.5"
+            placeholder="e.g. 2.0"
+            value={estimatedHours}
+            onChange={(e) => setEstimatedHours(e.target.value)}
+          />
+
+          {formError && <p className="text-xs text-rose-600 font-medium">{formError}</p>}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setShowCreateModal(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={submitting}>
+              Create Task
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Reusable Punch Card */}
+      <PunchCard activePunch={activePunch} onPunchSuccess={fetchMyAttendance} />
+
+      {loading ? (
+        <Card padding="none">
+          <LoadingState message="Loading your assigned tasks..." />
+        </Card>
+      ) : (
+        <div className="space-y-8">
+          {/* Active Tasks Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Regular Direct Tasks */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-lg font-bold text-slate-900">Direct Tasks</h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
+                    {activeRegularTasks.length}
                   </span>
                 </div>
+              </div>
 
-                {tasks.filter(t => t.status !== "COMPLETED").length === 0 ? (
-                  <div className="bg-white rounded-2xl p-8 text-center border border-gray-100">
-                    <p className="text-2xl mb-2">📋</p>
-                    <p className="text-gray-400 text-sm">No active tasks.</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {tasks.filter(t => t.status !== "COMPLETED").map((task) => (
-                      <div
-                        key={task.id}
-                        className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100"
-                      >
+              {activeRegularTasks.length === 0 ? (
+                <EmptyState
+                  icon="📋"
+                  title="No pending direct tasks"
+                  description="All direct tasks assigned to you or created by you are completed."
+                  actionLabel="+ Create Task"
+                  onAction={() => setShowCreateModal(true)}
+                />
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {activeRegularTasks.map((task) => {
+                    const isBlocked = task.dependsOn && task.dependsOn.status !== "COMPLETED";
+
+                    return (
+                      <Card key={task.id} padding="sm" className="hover:border-blue-300">
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1">
-                            <h3 className="text-sm font-semibold text-gray-800">
-                              {task.title}
-                            </h3>
+                            <h3 className="text-sm font-bold text-slate-900">{task.title}</h3>
                             {task.description && (
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                                 {task.description}
                               </p>
                             )}
-                            <div className="flex items-center gap-3 mt-2 flex-wrap">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[task.status]}`}>
-                                {statusLabels[task.status]}
-                              </span>
+                            <div className="flex items-center gap-2 mt-3 flex-wrap">
+                              <Badge type="status" value={task.status} />
+                              <Badge type="priority" value={task.priority} />
+
+                              {isBlocked && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                  🔒 Blocked by: {task.dependsOn?.title}
+                                </span>
+                              )}
+
                               {task.client && (
-                                <span className="text-xs text-gray-400">
-                                  🤝 {task.client.name}
+                                <span className="text-xs text-slate-500 font-medium">
+                                  🤝 Client: {task.client.name}
+                                </span>
+                              )}
+
+                              {task.dueDate && (
+                                <span className="text-xs text-amber-700 font-semibold">
+                                  📅 Due: {new Date(task.dueDate).toLocaleDateString("en-IN", {
+                                    day: "numeric",
+                                    month: "short",
+                                  })}
                                 </span>
                               )}
                             </div>
                           </div>
+
                           <select
                             value={task.status}
                             onChange={(e) => handleTaskStatusChange(task.id, e.target.value)}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                           >
                             <option value="PENDING">Pending</option>
                             <option value="IN_PROGRESS">In Progress</option>
                             <option value="COMPLETED">Completed</option>
                           </select>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Column 2 — Roadmap Tasks (active only) */}
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Roadmap Tasks</h2>
-                  <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">
-                    {roadmapTasks.filter(t => t.status !== "COMPLETED").length}
-                  </span>
+                      </Card>
+                    );
+                  })}
                 </div>
-
-                {roadmapTasks.filter(t => t.status !== "COMPLETED").length === 0 ? (
-                  <div className="bg-white rounded-2xl p-8 text-center border border-gray-100">
-                    <p className="text-2xl mb-2">🗺️</p>
-                    <p className="text-gray-400 text-sm">No active roadmap tasks.</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {roadmapTasks.filter(t => t.status !== "COMPLETED").map((task) => (
-                      <div
-                        key={task.id}
-                        className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1">
-                            <h3 className="text-sm font-semibold text-gray-800">
-                              {task.title}
-                            </h3>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {task.module.title}
-                            </p>
-                            <div className="flex items-center gap-2 mt-2 flex-wrap">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roadmapStatusColors[task.status]}`}>
-                                {roadmapStatusLabels[task.status]}
-                              </span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                                {task.priority}
-                              </span>
-                              <span className="text-xs text-gray-400">
-                                🤝 {task.module.month.roadmap.client.name}
-                              </span>
-                              {task.dueDay && (
-                                <span className="text-xs text-gray-400">
-                                  Day {task.dueDay}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <select
-                            value={task.status}
-                            onChange={(e) => handleRoadmapTaskStatusChange(task.id, e.target.value)}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="PENDING">Pending</option>
-                            <option value="IN_PROGRESS">In Progress</option>
-                            <option value="COMPLETED">Completed</option>
-                            <option value="BLOCKED">Blocked</option>
-                          </select>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
-            {/* Bottom Row — Completed Tasks */}
-            {(tasks.filter(t => t.status === "COMPLETED").length > 0 ||
-              roadmapTasks.filter(t => t.status === "COMPLETED").length > 0) && (
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Completed</h2>
-                  <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-medium">
-                    {tasks.filter(t => t.status === "COMPLETED").length +
-                     roadmapTasks.filter(t => t.status === "COMPLETED").length}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-                  {/* Completed Regular Tasks */}
-                  <div className="flex flex-col gap-3">
-                    {tasks.filter(t => t.status === "COMPLETED").length > 0 && (
-                      <>
-                        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-                          Regular Tasks
-                        </p>
-                        {tasks.filter(t => t.status === "COMPLETED").map((task) => (
-                          <div
-                            key={task.id}
-                            className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100 opacity-70"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1">
-                                <h3 className="text-sm font-semibold text-gray-500 line-through">
-                                  {task.title}
-                                </h3>
-                                <div className="flex items-center gap-3 mt-2">
-                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
-                                    Completed
-                                  </span>
-                                  {task.client && (
-                                    <span className="text-xs text-gray-400">
-                                      🤝 {task.client.name}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <select
-                                value={task.status}
-                                onChange={(e) => handleTaskStatusChange(task.id, e.target.value)}
-                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="PENDING">Pending</option>
-                                <option value="IN_PROGRESS">In Progress</option>
-                                <option value="COMPLETED">Completed</option>
-                              </select>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
-
-                  {/* Completed Roadmap Tasks */}
-                  <div className="flex flex-col gap-3">
-                    {roadmapTasks.filter(t => t.status === "COMPLETED").length > 0 && (
-                      <>
-                        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-                          Roadmap Tasks
-                        </p>
-                        {roadmapTasks.filter(t => t.status === "COMPLETED").map((task) => (
-                          <div
-                            key={task.id}
-                            className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100 opacity-70"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1">
-                                <h3 className="text-sm font-semibold text-gray-500 line-through">
-                                  {task.title}
-                                </h3>
-                                <p className="text-xs text-gray-400 mt-1">
-                                  {task.module.title}
-                                </p>
-                                <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
-                                    Completed
-                                  </span>
-                                  <span className="text-xs text-gray-400">
-                                    🤝 {task.module.month.roadmap.client.name}
-                                  </span>
-                                </div>
-                              </div>
-                              <select
-                                value={task.status}
-                                onChange={(e) => handleRoadmapTaskStatusChange(task.id, e.target.value)}
-                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="PENDING">Pending</option>
-                                <option value="IN_PROGRESS">In Progress</option>
-                                <option value="COMPLETED">Completed</option>
-                                <option value="BLOCKED">Blocked</option>
-                              </select>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                </div>
+            {/* Roadmap Tasks */}
+            <div>
+              <div className="flex items-center gap-2.5 mb-4">
+                <h2 className="text-lg font-bold text-slate-900">Roadmap Tasks</h2>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-700">
+                  {activeRoadmapTasks.length}
+                </span>
               </div>
-            )}
 
+              {activeRoadmapTasks.length === 0 ? (
+                <EmptyState
+                  icon="🗺️"
+                  title="No active roadmap tasks"
+                  description="You currently have no pending tasks from client 90-day roadmaps."
+                />
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {activeRoadmapTasks.map((task) => (
+                    <Card key={task.id} padding="sm" className="hover:border-indigo-300">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <h3 className="text-sm font-bold text-slate-900">{task.title}</h3>
+                          <p className="text-xs font-medium text-slate-400 mt-0.5">
+                            {task.module.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                            <Badge type="status" value={task.status} />
+                            <Badge type="priority" value={task.priority} />
+                            <span className="text-xs text-slate-500 font-medium">
+                              🤝 {task.module.month.roadmap.client.name}
+                            </span>
+                            {task.dueDay && (
+                              <span className="text-xs text-slate-400">Day {task.dueDay}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <select
+                          value={task.status}
+                          onChange={(e) => handleRoadmapTaskStatusChange(task.id, e.target.value)}
+                          className="border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        >
+                          <option value="PENDING">Pending</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="COMPLETED">Completed</option>
+                          <option value="BLOCKED">Blocked</option>
+                        </select>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 }

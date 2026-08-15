@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/authHelpers";
 
 export async function GET(request: Request) {
+  const { session, errorResponse } = await requireAuth();
+  if (errorResponse || !session) return errorResponse;
+
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+    let userId = searchParams.get("userId");
+
+    // Non-admin employees/clients can only query their own attendance
+    if (session.user.role !== "ADMIN") {
+      userId = session.user.id;
+    }
 
     const whereClause: Record<string, any> = {};
     if (userId) {
@@ -34,23 +43,29 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const { session, errorResponse } = await requireAuth();
+  if (errorResponse || !session) return errorResponse;
+
   try {
     const body = await request.json();
-    const { userId, action, notes } = body;
+    const { action, notes } = body;
+    let { userId } = body;
 
-    if (!userId || !action) {
-      return NextResponse.json({ error: "User ID and action are required" }, { status: 400 });
+    // Prevent identity impersonation: non-admin users can only punch for themselves
+    if (session.user.role !== "ADMIN" || !userId) {
+      userId = session.user.id;
+    }
+
+    if (!action) {
+      return NextResponse.json({ error: "Action is required" }, { status: 400 });
     }
 
     const now = new Date();
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
 
-    const endOfDay = new Date(now);
-    endOfDay.setHours(23, 59, 59, 999);
-
     if (action === "PUNCH_IN") {
-      // Check if user already has an active punch today
+      // Check if user already has an active punch session
       const existingActive = await prisma.attendance.findFirst({
         where: {
           userId,
@@ -71,7 +86,7 @@ export async function POST(request: Request) {
           date: startOfDay,
           punchIn: now,
           status: "PUNCHED_IN",
-          notes: notes || null,
+          notes: notes ? notes.trim() : null,
         },
         include: {
           user: {
@@ -101,7 +116,7 @@ export async function POST(request: Request) {
       }
 
       const diffMs = now.getTime() - new Date(activeRecord.punchIn).getTime();
-      const totalMinutes = Math.round(diffMs / (1000 * 60));
+      const totalMinutes = Math.max(1, Math.round(diffMs / (1000 * 60)));
 
       const updatedRecord = await prisma.attendance.update({
         where: { id: activeRecord.id },
@@ -109,7 +124,11 @@ export async function POST(request: Request) {
           punchOut: now,
           totalMinutes,
           status: "PUNCHED_OUT",
-          notes: notes ? `${activeRecord.notes ? activeRecord.notes + " | " : ""}${notes}` : activeRecord.notes,
+          notes: notes
+            ? activeRecord.notes
+              ? `${activeRecord.notes} | ${notes.trim()}`
+              : notes.trim()
+            : activeRecord.notes,
         },
         include: {
           user: {

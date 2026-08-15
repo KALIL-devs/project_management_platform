@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
+import SessionDetailModal, { AttendanceSession } from "@/components/attendance/SessionDetailModal";
 
 type Task = {
   id: string;
   title: string;
   description?: string | null;
   status: string;
+  priority?: string;
   createdAt: string;
   updatedAt?: string;
 };
@@ -61,6 +63,10 @@ export default function EmployeeDetailPage({
 
   const [activeTab, setActiveTab] = useState<"attendance" | "tasks" | "settings">("attendance");
 
+  // Selected Session Modal State
+  const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null);
+  const [showSessionModal, setShowSessionModal] = useState(false);
+
   // Edit form state
   const [showEditModal, setShowEditModal] = useState(false);
   const [editName, setEditName] = useState("");
@@ -91,6 +97,15 @@ export default function EmployeeDetailPage({
   useEffect(() => {
     fetchUserDetail();
   }, [id]);
+
+  function handleOpenSessionDetails(session: Attendance) {
+    if (!user) return;
+    setSelectedSession({
+      ...session,
+      user: { name: user.name, email: user.email },
+    });
+    setShowSessionModal(true);
+  }
 
   async function handleUpdateProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -200,7 +215,7 @@ export default function EmployeeDetailPage({
           </div>
           <button
             onClick={() => setShowEditModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold text-sm rounded-xl hover:bg-blue-700 transition-all shadow-sm"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold text-sm rounded-xl hover:bg-blue-700 transition-all shadow-sm cursor-pointer"
           >
             ✏️ Edit Employee
           </button>
@@ -289,7 +304,7 @@ export default function EmployeeDetailPage({
       <div className="border-b border-gray-200 flex gap-8 text-sm font-medium">
         <button
           onClick={() => setActiveTab("attendance")}
-          className={`pb-4 px-1 border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-4 px-1 border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === "attendance"
               ? "border-blue-600 text-blue-600 font-semibold"
               : "border-transparent text-gray-500 hover:text-gray-700"
@@ -300,7 +315,7 @@ export default function EmployeeDetailPage({
 
         <button
           onClick={() => setActiveTab("tasks")}
-          className={`pb-4 px-1 border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-4 px-1 border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === "tasks"
               ? "border-blue-600 text-blue-600 font-semibold"
               : "border-transparent text-gray-500 hover:text-gray-700"
@@ -311,7 +326,7 @@ export default function EmployeeDetailPage({
 
         <button
           onClick={() => setActiveTab("settings")}
-          className={`pb-4 px-1 border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-4 px-1 border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === "settings"
               ? "border-blue-600 text-blue-600 font-semibold"
               : "border-transparent text-gray-500 hover:text-gray-700"
@@ -327,7 +342,7 @@ export default function EmployeeDetailPage({
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-gray-800">Punch In / Punch Out Log Details</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Complete record of punch times, total duration, and session notes for {user.name}.</p>
+              <p className="text-xs text-gray-500 mt-0.5">Click any shift log to inspect detailed session notes & tasks worked on for {user.name}.</p>
             </div>
           </div>
 
@@ -340,12 +355,13 @@ export default function EmployeeDetailPage({
                 <th className="px-6 py-4">Duration</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Notes / Activity</th>
+                <th className="px-6 py-4 text-right">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {user.attendances.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-gray-400">
+                  <td colSpan={7} className="text-center py-12 text-gray-400">
                     No punch records found for this employee.
                   </td>
                 </tr>
@@ -362,8 +378,12 @@ export default function EmployeeDetailPage({
                     : "In Progress";
 
                   return (
-                    <tr key={att.id} className="hover:bg-gray-50 transition-colors text-sm">
-                      <td className="px-6 py-4 font-semibold text-gray-800">
+                    <tr
+                      key={att.id}
+                      onClick={() => handleOpenSessionDetails(att)}
+                      className="hover:bg-blue-50/40 transition-colors cursor-pointer group text-sm"
+                    >
+                      <td className="px-6 py-4 font-semibold text-gray-800 group-hover:text-blue-600">
                         {new Date(att.date || att.punchIn).toLocaleDateString("en-IN", {
                           weekday: "short",
                           day: "numeric",
@@ -393,6 +413,11 @@ export default function EmployeeDetailPage({
                       </td>
                       <td className="px-6 py-4 text-gray-500 text-xs max-w-xs truncate">
                         {att.notes || "—"}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 group-hover:text-blue-800 transition-colors">
+                          View Details →
+                        </span>
                       </td>
                     </tr>
                   );
@@ -534,6 +559,15 @@ export default function EmployeeDetailPage({
           </form>
         </div>
       )}
+
+      {/* Session Details Floating Modal */}
+      <SessionDetailModal
+        isOpen={showSessionModal}
+        onClose={() => setShowSessionModal(false)}
+        session={selectedSession}
+        relatedTasks={user.assignedTasks}
+        relatedRoadmapTasks={user.roadmapTasks}
+      />
 
       {/* Edit Profile Modal */}
       {showEditModal && (
